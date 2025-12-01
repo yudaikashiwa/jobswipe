@@ -1,0 +1,289 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+  // migrate dev 用のシャドウDB（CREATE DATABASE 権限が必要）
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  password  String // ハッシュ化されたパスワード
+  userType  UserType
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  studentProfile   StudentProfile?
+  companyProfile   CompanyProfile?
+  sentOffers       Offer[]         @relation("CompanySender")
+  receivedOffers   Offer[]         @relation("StudentReceiver")
+  sentMessages     Message[]       @relation("Sender")
+  receivedMessages Message[]       @relation("Receiver")
+  likes            Like[]
+  passwordResetTokens PasswordResetToken[]
+  notifications       Notification[]
+  skips               Skip[]
+  offerTemplates      OfferTemplate[]
+  messageReads        MessageRead[]
+  offerDrafts         OfferDraft[]
+  savedSearches       SavedSearch[]
+  follows             Follow[]        @relation("Follower")
+  companyFollowers    Follow[]        @relation("CompanyFollowed")
+  footprintsAsStudent Footprint[]     @relation("FootprintStudent")
+  footprintsAsCompany Footprint[]     @relation("FootprintCompany")
+}
+
+enum UserType {
+  STUDENT
+  COMPANY
+  ADMIN
+}
+
+model StudentProfile {
+  id             String  @id @default(cuid())
+  userId         String  @unique
+  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastName       String?
+  firstName      String?
+  fullName       String?
+  lastNameKana   String?
+  firstNameKana  String?
+  nameKana       String?
+  birthDate      DateTime?
+  grade          String?
+  gender         String?
+  postalCode     String?
+  address        String?
+  phone          String?
+  university     String?
+  faculty        String?
+  department     String?
+  seminar        String?
+  researchTheme  String?
+  artsOrScience  String?
+  graduationYear Int?
+  highSchoolName String?
+  desiredIndustry1 String?
+  desiredIndustry2 String?
+  desiredIndustry3 String?
+  bio            String? @db.Text
+  skills         String? @db.Text
+  experience     String? @db.Text
+  programmingSkills String? @db.Text
+  languageSkills    String? @db.Text
+  certifications    String? @db.Text
+  avatarUrl      String?
+
+  videos        Video[]
+  receivedLikes Like[]
+  receivedSkips Skip[]
+  offerDrafts   OfferDraft[]
+}
+
+model CompanyProfile {
+  id          String  @id @default(cuid())
+  userId      String  @unique
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName String?
+  industry    String?
+  industries  Json?
+  websiteUrl  String?
+  description String? @db.Text
+  avatarUrl   String?
+  employeeCount Int?
+  sections     Json?
+  coverUrl   String?
+  location   String?
+  industryDisplay String? @db.Text
+  locationDetail String?
+}
+
+model Video {
+  id           String         @id @default(cuid())
+  studentId    String
+  student      StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  videoUrl     String // AWS S3のURL
+  thumbnailUrl String?
+  title        String
+  description  String?        @db.Text
+  tags         Json? // 例: ["笑顔", "英語対応可"]
+  uploadedAt   DateTime       @default(now())
+  isPublic     Boolean        @default(true)
+  sortOrder    Int            @default(0)
+  isFeatured   Boolean        @default(false)
+}
+
+model Like {
+  id        String         @id @default(cuid())
+  companyId String
+  company   User           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  studentId String
+  student   StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
+
+  @@unique([companyId, studentId]) // 会社は1人の学生に1回だけ「いいね」できる
+}
+
+model Skip {
+  id        String   @id @default(cuid())
+  companyId String
+  company   User     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  studentId String
+  student   StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([companyId, studentId])
+}
+
+model Offer {
+  id        String      @id @default(cuid())
+  companyId String
+  company   User        @relation("CompanySender", fields: [companyId], references: [id], onDelete: Cascade)
+  studentId String
+  student   User        @relation("StudentReceiver", fields: [studentId], references: [id], onDelete: Cascade)
+  message   String      @db.Text
+  status    OfferStatus @default(SENT)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @default(now()) @updatedAt
+
+  messages  Message[]
+}
+
+enum OfferStatus {
+  SENT
+  ACCEPTED
+  DECLINED
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  offerId    String
+  offer      Offer    @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  senderId   String
+  sender     User     @relation("Sender", fields: [senderId], references: [id], onDelete: NoAction)
+  receiverId String
+  receiver   User     @relation("Receiver", fields: [receiverId], references: [id], onDelete: NoAction)
+  content    String   @db.Text
+  sentAt     DateTime @default(now())
+  reads      MessageRead[]
+  attachmentUrl  String?
+  attachmentName String?
+  attachmentType String?
+}
+
+model MessageRead {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt    DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([userId])
+}
+
+model TypingStatus {
+  id        String   @id @default(cuid())
+  offerId   String
+  userId    String
+  until     DateTime
+
+  @@unique([offerId, userId])
+}
+
+enum NotificationType {
+  OFFER_RECEIVED
+  MESSAGE_RECEIVED
+  OFFER_STATUS
+}
+
+model Notification {
+  id        String            @id @default(cuid())
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String?           @db.Text
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime          @default(now())
+
+  @@index([userId, readAt])
+}
+
+model OfferTemplate {
+  id        String   @id @default(cuid())
+  companyId String
+  company   User     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  title     String
+  body      String   @db.Text
+  category  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model OfferDraft {
+  id               String   @id @default(cuid())
+  companyId        String
+  company          User     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  studentProfileId String
+  student          StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  message          String   @db.Text
+  updatedAt        DateTime @updatedAt
+  createdAt        DateTime @default(now())
+
+  @@unique([companyId, studentProfileId])
+}
+
+model SavedSearch {
+  id        String   @id @default(cuid())
+  companyId String
+  company   User     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String
+  query     Json
+  createdAt DateTime @default(now())
+}
+
+model Follow {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation("Follower", fields: [userId], references: [id], onDelete: Cascade)
+  companyId String
+  company   User     @relation("CompanyFollowed", fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+}
+
+model Footprint {
+  id             String   @id @default(cuid())
+  studentUserId  String
+  student        User     @relation("FootprintStudent", fields: [studentUserId], references: [id], onDelete: Cascade)
+  companyId      String
+  company        User     @relation("FootprintCompany", fields: [companyId], references: [id], onDelete: Cascade)
+  lastViewedAt   DateTime @default(now())
+
+  @@unique([studentUserId, companyId])
+  @@index([studentUserId])
+}
+
+model PasswordResetToken {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}
